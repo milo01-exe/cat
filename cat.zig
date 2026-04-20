@@ -9,20 +9,30 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, args);
 
     var stdout_buffer: [1024]u8 = undefined;
-    const stdout_file = std.fs.File.stdout();
-    var stdout_writer = stdout_file.writer(&stdout_buffer);
+    var stderr_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writerStreaming(&stdout_buffer);
+    var stderr_writer = std.fs.File.stderr().writerStreaming(&stderr_buffer);
+
     const stdout = &stdout_writer.interface;
+    const stderr = &stderr_writer.interface;
 
     const cwd = std.fs.cwd();
 
     // The first item in the slice is the program name
     for (args[1..]) |filepath| {
-        const max_bytes = 16 * 1024 * 1024; // 16 MB
-        const text = try cwd.readFileAlloc(allocator, filepath, max_bytes);
-        defer allocator.free(text);
+        const file = cwd.openFile(filepath, .{}) catch {
+            stderr.print("Could not open: {s}\n", .{filepath}) catch {}; 
+            stderr.flush() catch {};
+            continue;
+        };
+        defer file.close();
 
-        try stdout.writeAll(text);
+        var file_buffer: [1024]u8 = undefined;
+        var file_reader = file.reader(&file_buffer);
+        const reader = &file_reader.interface;
+
+        _ = try reader.streamRemaining(stdout);
     }
-    
+
     try stdout.flush();
 }
